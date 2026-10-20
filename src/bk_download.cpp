@@ -187,10 +187,13 @@ bool BkDownload::download_blob() {
         ssize_t rlen;
         {
             SCOPE_AUDIT("bk_download", AU_FILEOP(url, offset, rlen));
-            rlen = src->pread(buff, bs, offset);
+            rlen = src->pread(buff, count, offset);
         }
-        if (rlen < 0) {
-            LOG_WARN("failed to read at ", VALUE(offset), VALUE(count), VALUE(errno), " retry...");
+        if (rlen != (ssize_t)count) {
+            if (rlen >= 0)
+                errno = EIO;
+            LOG_WARN("failed to read at ", VALUE(offset), VALUE(count), VALUE(rlen),
+                     VALUE(errno), " retry...");
             goto again_read;
         }
         retry = 2;
@@ -198,9 +201,11 @@ bool BkDownload::download_blob() {
         if (!(retry--))
             LOG_ERROR_RETURN(EIO, false, "failed to write at ", VALUE(offset), VALUE(count));
         auto wlen = dst->pwrite(buff, count, offset);
-        // but once write lenth larger than read length treats as OK
-        if (wlen < rlen) {
-            LOG_WARN("failed to write at ", VALUE(offset), VALUE(count), VALUE(errno), " retry...");
+        if (wlen != (ssize_t)count) {
+            if (wlen >= 0)
+                errno = EIO;
+            LOG_WARN("failed to write at ", VALUE(offset), VALUE(count), VALUE(wlen),
+                     VALUE(errno), " retry...");
             goto again_write;
         }
         offset += count;
